@@ -26,8 +26,10 @@
 storage.googleapis.com
 runs/*
 data/*
-!data/samples/zidane.jpg
-!data/samples/bus.jpg
+!output/*
+!data/samples/
+!data/P30.names
+!data/ego-hand.names
 !data/coco.names
 !data/coco_paper.names
 !data/coco.data
