@@ -3,9 +3,6 @@
 *.tif
 *.tiff
 *.heic
-*.JPG
-*.JPEG
-*.PNG
 *.BMP
 *.TIF
 *.TIFF
@@ -23,7 +20,8 @@
 storage.googleapis.com
 runs/*
 data/*
-!output/*
+output/*
+!output/demo/
 !data/samples/
 !data/P30.names
 !data/ego-hand.names
