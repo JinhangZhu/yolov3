@@ -476,13 +476,13 @@ def build_targets(p, targets, model):
     return tcls, tbox, indices, anch
 
 
-def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=True, classes=None, agnostic=False):
+def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=True, classes=None, agnostic=False, soft=False, soft_thres=0.05):
     """
     Performs  Non-Maximum Suppression on inference results
     Returns detections with shape:
         nx6 (x1, y1, x2, y2, conf, cls)
     """
-
+    print('\nprediction[0].shape: ', prediction[0].shape)
     # Settings
     merge = True  # merge for best mAP
     min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
@@ -496,6 +496,7 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
         # Apply constraints
         x = x[x[:, 4] > conf_thres]  # confidence
         x = x[((x[:, 2:4] > min_wh) & (x[:, 2:4] < max_wh)).all(1)]  # width-height
+        # print('\nx: ', x)
 
         # If none remain process next image
         if not x.shape[0]:
@@ -534,7 +535,27 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
         # Batched NMS
         c = x[:, 5] * 0 if agnostic else x[:, 5]  # classes
         boxes, scores = x[:, :4].clone() + c.view(-1, 1) * max_wh, x[:, 4]  # boxes (offset by class), scores
-        i = torchvision.ops.boxes.nms(boxes, scores, iou_thres)
+
+        # Hard-NMS by torchvision
+        if not soft:
+            i = torchvision.ops.boxes.nms(boxes, scores, iou_thres)
+        # soft-NMS
+        else:
+            i = soft_nms(boxes, scores, soft_thres)
+            
+        # Soft-NMS
+        # print(
+        #     '\nprediction: ', prediction,
+        #     '\noutput: ', output,
+        #     '\nboxes: ', boxes,
+        #     '\nscores: ', scores,
+        #     '\nios_thres: ', iou_thres,
+        #     '\nsoft_thres: ', soft_thres
+        # )
+        # torch.save(boxes, 'output/demo/boxes.pt')
+        
+        # torch.save(scores, 'output/demo/scores.pt')
+
         if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
             try:  # update boxes as boxes(i,4) = weights(i,n) * boxes(n,4)
                 iou = box_iou(boxes[i], boxes) > iou_thres  # iou matrix
@@ -548,9 +569,77 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
         output[xi] = x[i]
         if (time.time() - t) > time_limit:
             break  # time limit exceeded
+        # print('\noutput: ', output)
 
     return output
 
+def soft_nms(bboxes, bscores, sigma=0.5, thres=0.001):
+    """Soft NMS algorithm under PyTorch frame.
+    Reference:
+        https://github.com/DocF/Soft-NMS/blob/master/softnms_pytorch.py
+    Arguments:
+        boxes:  boxes coordinate tensor. Format: (x1,y1,x2,y2)
+        scores: boxes score tensor
+        sigma:  variance of Guassian function
+        thres:  discard boxes with scores less than the threshold
+    Return:
+        the index of the selected boxes
+    """
+    boxes = bboxes.clone()
+    scores = bscores.clone()
+    cuda = 1 if torch.cuda.is_available() else 0
+    if cuda:
+        boxes = boxes.cuda()
+        scores = scores.cuda()
+    
+    # Indexes concatenate boxes with the last column
+    N = boxes.shape[0]
+    if cuda:
+        indices = torch.arange(0, N, dtype=torch.float).cuda().view(N, 1)
+    else:
+        indices = torch.arange(0, N, dtype=torch.float).view(N, 1)
+    boxes = torch.cat((boxes, indices), dim=1)
+
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+    areas = (x2-x1+1)*(y2-y1+1)
+
+    for i in range(N):
+        # intermediate params for later params exchange
+        tscore = scores[i].clone()
+        pos = i+1
+
+        # Exchange later max and current index
+        if i != N - 1:
+            max_score, max_pos = torch.max(scores[pos:], dim=0)
+            if tscore < max_score:
+                boxes[i], boxes[max_pos.item() + i + 1] = boxes[max_pos.item() + i + 1].clone(), boxes[i].clone()
+                scores[i], scores[max_pos.item() + i + 1] = scores[max_pos.item() + i + 1].clone(), scores[i].clone()
+                areas[i], areas[max_pos + i + 1] = areas[max_pos + i + 1].clone(), areas[i].clone()
+        
+        # IoU calculation
+        xx1 = torch.max(boxes[i, 0], boxes[pos:, 0])    # inter left-top x
+        yy1 = torch.max(boxes[i, 1], boxes[pos:, 1])    # inter left-top y
+        xx2 = torch.min(boxes[i, 2], boxes[pos:, 2])    # inter right-bot x
+        yy2 = torch.min(boxes[i, 3], boxes[pos:, 3])    # inter right-bot y
+
+        zero_tensor = torch.tensor([0.0]).cuda() if cuda else torch.tensor([0.0])
+        w = torch.max(zero_tensor, xx2-xx1+1)
+        h = torch.max(zero_tensor, yy2-yy1+1)
+
+        inter = w*h
+        ovr = torch.div(inter, (areas[i] + areas[pos:] - inter))
+
+        # Gaussian decay
+        weight = torch.exp(-(ovr**2)/sigma)
+        scores[pos:] = weight * scores[pos:]
+
+    # Score thresholding
+    keep = boxes[:, 4][scores > thres].type(torch.LongTensor)
+
+    return keep
 
 def get_yolo_layers(model):
     bool_vec = [x['type'] == 'yolo' for x in model.module_defs]

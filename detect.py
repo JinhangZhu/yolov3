@@ -95,7 +95,7 @@ def detect(save_img=False):
 
         # Apply NMS
         pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres,
-                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms)
+                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms, soft=opt.soft_nms)
 
         # Apply Classifier
         if classify:
@@ -113,6 +113,11 @@ def detect(save_img=False):
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  #  normalization gain whwh
             if det is not None and len(det):
                 # Rescale boxes from imgsz to im0 size
+                print(
+                    '\nimg.shape[2]: ', img.shape[2:], 
+                    '\ndet[:, :4]: ', det[:, :4],
+                    '\nim0.shape: ', im0.shape
+                )
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
                 # Print results
@@ -185,6 +190,8 @@ if __name__ == '__main__':
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
+    parser.add_argument('--soft-nms', action='store_true', help='soft NMS')
+    parser.add_argument('--soft-thres', type=float, default=0.05, help='IOU threshold for soft-NMS')
     opt = parser.parse_args()
     opt.cfg = check_file(opt.cfg)  # check file
     opt.names = check_file(opt.names)  # check file
