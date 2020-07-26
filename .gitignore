@@ -22,6 +22,7 @@ runs/*
 data/*
 output/*
 !output/demo/
+!output/softnms/
 !data/samples/
 !data/P30.names
 !data/ego-hand.names
