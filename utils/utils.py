@@ -482,7 +482,7 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=T
     Returns detections with shape:
         nx6 (x1, y1, x2, y2, conf, cls)
     """
-    print('\nprediction[0].shape: ', prediction[0].shape)
+    # print('\nprediction[0].shape: ', prediction[0].shape)
     # Settings
     merge = True  # merge for best mAP
     min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height

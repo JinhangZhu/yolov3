@@ -113,11 +113,11 @@ def detect(save_img=False):
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  #  normalization gain whwh
             if det is not None and len(det):
                 # Rescale boxes from imgsz to im0 size
-                print(
-                    '\nimg.shape[2]: ', img.shape[2:], 
-                    '\ndet[:, :4]: ', det[:, :4],
-                    '\nim0.shape: ', im0.shape
-                )
+                # print(
+                #     '\nimg.shape[2]: ', img.shape[2:], 
+                #     '\ndet[:, :4]: ', det[:, :4],
+                #     '\nim0.shape: ', im0.shape
+                # )
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
                 # Print results
@@ -130,10 +130,10 @@ def detect(save_img=False):
                     if save_txt:  # Write to file
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                         with open(save_path[:save_path.rfind('.')] + '.txt', 'a') as file:
-                            file.write(('%g ' * 5 + '\n') % (cls, *xywh))  # label format
+                            file.write(('%g ' * 6 + '\n') % (cls, conf, *xywh))  # label format
                         # CUSTOM
                         with open(save_path[:save_path.rfind('.')] + '_unnorm.txt', 'a') as file:
-                            file.write(('%g ' * 5 + '\n') % (cls, *xyxy))  # label format
+                            file.write(('%g ' * 6 + '\n') % (cls, conf, *xyxy))  # label format
 
                     if save_img or view_img:  # Add bbox to image
                         label = '%s %.2f' % (names[int(cls)], conf)
