@@ -493,7 +493,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         if self.augment:
             # random left-right flip
-            lr_flip = True
+            lr_flip = True  # SHOULD BE BANNED
             if lr_flip and random.random() < 0.5:
                 img = np.fliplr(img)
                 if nL:
@@ -505,6 +505,12 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 img = np.flipud(img)
                 if nL:
                     labels[:, 2] = 1 - labels[:, 2]
+        
+        if self.augment:
+            # Random crop
+            img = random_crop(img)
+            
+
 
         labels_out = torch.zeros((nL, 6))
         if nL:
@@ -522,6 +528,17 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
         return torch.stack(img, 0), torch.cat(label, 0), path, shapes
+
+def random_crop(img, scale=0.8):
+    # https://github.com/okankop/vidaug/blob/14aad8fc0e58ac27966a113768a33610c8ece4db/vidaug/augmentors/crop.py#L145
+    h, w, c = img.shape
+    d_h, d_w = int(h*scale), int(w*scale)     # Desired
+    w1 = random.randint(0, w - d_w)
+    h1 = random.randint(0, h - d_h)
+
+    dst = img[h1:h1 + d_h, w1:w1 + d_w, :]
+    dst = cv2.resize(dst, (w, h), interpolation=cv2.INTER_LINEAR)
+    return dst
 
 
 def load_image(self, index):

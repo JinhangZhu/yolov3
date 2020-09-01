@@ -21,11 +21,13 @@ storage.googleapis.com
 runs/*
 data/*
 output/*
-!output/demo/
-!output/softnms/
+!output/noflip-mix-pret/
+# !output/demo/
+# !output/softnms/
 !data/samples/
 !data/P30.names
 !data/ego-hand.names
+!data/epichands.names
 !data/coco.names
 !data/coco_paper.names
 !data/coco.data
@@ -240,3 +242,13 @@ com_crashlytics_export_strings.xml
 crashlytics.properties
 crashlytics-build.properties
 fabric.properties
+
+# Python scripts
+hand_cnn_ori.py
+
+# Other
+results.png
+test_batch0_gt.jpg
+test_batch0_pred.jpg
+well.ipynb
+*.txt

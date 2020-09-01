@@ -95,10 +95,11 @@ def test(cfg,
             # Compute loss
             if is_training:  # if model has loss hyperparameters
                 loss += compute_loss(train_out, targets, model)[1][:3]  # GIoU, obj, cls
+            
 
             # Run NMS
             t = torch_utils.time_synchronized()
-            output = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres, multi_label=multi_label)
+            output = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres, multi_label=multi_label, soft=opt.soft_nms, soft_thres=opt.soft_thres)
             t1 += torch_utils.time_synchronized() - t
 
         # Statistics per image
@@ -112,6 +113,28 @@ def test(cfg,
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
                 continue
+            
+            # ------------Correction-------------
+            f_correct = True
+            if f_correct:
+                if pred.shape[0] > 2:
+                    pred = pred[:2, :]
+            # ------------Correction-------------
+
+            # ------------Classification(a)-------------
+            # print(pred)
+            classify_a = False
+            if classify_a:
+                if pred.shape[0] == 2:
+                    c_x0 = (pred[0, 0] + pred[0, 2]) / 2
+                    c_x1 = (pred[1, 0] + pred[1, 2]) / 2
+                    pred[0, -1] = int(c_x0 > c_x1)
+                    pred[1, -1] = int(c_x0 < c_x1)
+            # print(pred)
+            # ------------Classification(a)-------------
+            # ------------Classification(b)-------------
+            
+            # ------------Classification(b)-------------
 
             # Append to text file
             # with open('test.txt', 'a') as file:
@@ -139,14 +162,16 @@ def test(cfg,
             if nl:
                 detected = []  # target indices
                 tcls_tensor = labels[:, 0]
+                # print('tcls_tensor: ', tcls_tensor)
+                # print('pred: ', pred)
 
                 # target boxes
                 tbox = xywh2xyxy(labels[:, 1:5]) * whwh
 
                 # Per target class
                 for cls in torch.unique(tcls_tensor):
-                    ti = (cls == tcls_tensor).nonzero().view(-1)  # prediction indices
-                    pi = (cls == pred[:, 5]).nonzero().view(-1)  # target indices
+                    ti = (cls == tcls_tensor).nonzero().view(-1)  # target indices
+                    pi = (cls == pred[:, 5]).nonzero().view(-1)  # prediction indices
 
                     # Search for detections
                     if pi.shape[0]:
@@ -162,6 +187,7 @@ def test(cfg,
                                 if len(detected) == nl:  # all targets already located in image
                                     break
 
+            # print('correct:', correct)
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
@@ -223,10 +249,10 @@ def test(cfg,
                   'See https://github.com/cocodataset/cocoapi/issues/356')
 
     # Return results
-    maps = np.zeros(nc) + map
-    for i, c in enumerate(ap_class):
-        maps[c] = ap[i]
-    return (mp, mr, map, mf1, *(loss.cpu() / len(dataloader)).tolist()), maps
+    # maps = np.zeros(nc) + map
+    # for i, c in enumerate(ap_class):
+    #     maps[c] = ap[i]
+    # return (mp, mr, map, mf1, *(loss.cpu() / len(dataloader)).tolist()), maps
 
 
 if __name__ == '__main__':
@@ -243,6 +269,8 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1) or cpu')
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
+    parser.add_argument('--soft-nms', action='store_true', help='soft NMS')
+    parser.add_argument('--soft-thres', type=float, default=0.05, help='IOU threshold for soft-NMS')
     opt = parser.parse_args()
     opt.save_json = opt.save_json or any([x in opt.data for x in ['coco.data', 'coco2014.data', 'coco2017.data']])
     opt.cfg = check_file(opt.cfg)  # check file

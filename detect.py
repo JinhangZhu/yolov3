@@ -3,6 +3,8 @@ import argparse
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
+from hand_cnn import HandCropCNN    # ------------Classification-------------
+from differentiate import *
 
 
 def detect(save_img=False):
@@ -18,6 +20,12 @@ def detect(save_img=False):
 
     # Initialize model
     model = Darknet(opt.cfg, imgsz)
+
+    # ------------Classification(c)-------------
+    if opt.cls_mode == 'c':
+        handcnn = HandCropCNN()
+        handcnn.to(device)
+    # ------------Classification(c)-------------
 
     # Load weights
     attempt_download(weights)
@@ -95,7 +103,7 @@ def detect(save_img=False):
 
         # Apply NMS
         pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres,
-                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms, soft=opt.soft_nms)
+                                   multi_label=False, classes=opt.classes, agnostic=opt.agnostic_nms, soft=opt.soft_nms, soft_thres=opt.soft_thres)
 
         # Apply Classifier
         if classify:
@@ -107,18 +115,62 @@ def detect(save_img=False):
                 p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
             else:
                 p, s, im0 = path, '', im0s
-
+            print(im0.shape)
             save_path = str(Path(out) / Path(p).name)
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  #  normalization gain whwh
             if det is not None and len(det):
                 # Rescale boxes from imgsz to im0 size
-                # print(
-                #     '\nimg.shape[2]: ', img.shape[2:], 
-                #     '\ndet[:, :4]: ', det[:, :4],
-                #     '\nim0.shape: ', im0.shape
-                # )
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+
+                # print(det)
+                # ------------Classification(a)-------------
+                if opt.cls_mode == 'a':
+                    print('Classifier a')
+                    if det.shape[0] == 2:
+                        c_x0 = (det[0, 0] + det[0, 2]) / 2
+                        c_x1 = (det[1, 0] + det[1, 2]) / 2
+                        det[0, -1] = int(c_x0 > c_x1)
+                        det[1, -1] = int(c_x0 < c_x1)
+                # ------------Classification(a)-------------
+
+                # ------------Classification(b)-------------
+                elif opt.cls_mode == 'b':
+                    print('Classifier b')
+                    # print(det)
+                    det_copy = det.clone().detach()
+                    det_copy[:, 0] = det[:, -1]
+                    det_copy[:, 1] = det[:, -2]
+                    det_copy[:, 2:] = det[:, :4]
+                    # print(det_copy)
+                    rgb = cv2.cvtColor(im0, cv2.COLOR_BGR2RGB)
+                    lr_boxes = diff_hands(img=rgb, boxes=det_copy.numpy(), extend_scale=0,
+                                          bin_thres=5, view=False)
+                    det[:, -1] = torch.from_numpy(lr_boxes[:, 0])
+                # ------------Classification(b)-------------
+
+                # ------------Classification(c)-------------
+                elif opt.cls_mode == 'c':
+                    print('Classifier c')
+                    crops = []
+                    for i in range(det.shape[0]):
+                        xyxy = torch.tensor(det[i, :4], dtype=int).tolist()
+                        crop_img = im0[xyxy[1]:xyxy[3], xyxy[0]:xyxy[2]]
+                        crops.append(crop_img)
+                    crops = tuple(crops)
+
+                    cls_conf, labels = handcnn.detect(device, 'weights/handcnn.pt', crops, names)
+                    det[:, -1] = labels
+                    # print(cls_conf)
+                    f_correct = True
+                    if f_correct:
+                        if len(det[:, -1]) == 2 and len(det[:, -1].unique()) == 1:
+                            label = det[:, -1].unique()
+                            l_conf = cls_conf[:, label.item()]
+                            det[torch.argmin(l_conf), -1] = 1 - det[torch.argmin(l_conf), -1]
+                # ------------Classification(c)-------------
+                else:
+                    pass
 
                 # Print results
                 for c in det[:, -1].unique():
@@ -192,6 +244,7 @@ if __name__ == '__main__':
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--soft-nms', action='store_true', help='soft NMS')
     parser.add_argument('--soft-thres', type=float, default=0.05, help='IOU threshold for soft-NMS')
+    parser.add_argument('--cls-mode', type=str, default='', help='Second stage classifier mode: a, b, c')
     opt = parser.parse_args()
     opt.cfg = check_file(opt.cfg)  # check file
     opt.names = check_file(opt.names)  # check file
